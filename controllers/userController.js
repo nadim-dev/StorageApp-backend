@@ -199,9 +199,10 @@ export const getCurrrentUser = async (req, res) => {
       maxStorageInBytes,
       usedStorage: size,
       planId:subscription?.planId || null,
-      status:subscription.status,
+      status:subscription?.statusn|| null,
     });
   } catch (err) {
+    console.log(err);
     return res.status(500).json({ message: "Internal server Error" });
   }
 };

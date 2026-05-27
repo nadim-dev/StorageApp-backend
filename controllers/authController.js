@@ -41,6 +41,7 @@ export const loginWithGoogle = async (req, res) => {
   }
   const { id_token } = data;
   let mongooseSession;
+  let transactionCommitted = false;
 
   try {
     const profileData = await verifyIdToken(id_token);
@@ -84,6 +85,7 @@ export const loginWithGoogle = async (req, res) => {
       );
 
       await mongooseSession.commitTransaction();
+      transactionCommitted = true;
       user = newUser;
     }
 
@@ -93,26 +95,6 @@ export const loginWithGoogle = async (req, res) => {
         .status(403)
         .json({ error: "your account has been terminated by admin" });
     }
-
-    // EXISTING USER → update image ONLY if Google image changed
-    // if (!user.picturePublicId && picture) {
-    //   console.log("background function is running");
-    //   setImmediate(async () => {
-    //     try {
-    //       const { publicId, version } = await uploadOAuthAvatarToCloudinary(
-    //         picture,
-    //         user._id.toString(),
-    //       );
-    //       console.log("public_id", publicId);
-    //       await User.findByIdAndUpdate(user._id, {
-    //         picturePublicId: publicId,
-    //         pictureVersion: version,
-    //       });
-    //     } catch (err) {
-    //       console.error("Background upload failed:", err);
-    //     }
-    //   });
-    // }
 
     //* 🔐 DEVICE LIMIT LOGIC (existing + new users)
 
@@ -161,7 +143,7 @@ export const loginWithGoogle = async (req, res) => {
       message: "Google login successful",
     });
   } catch (err) {
-    if (mongooseSession) {
+    if (mongooseSession && !transactionCommitted) {
       await mongooseSession.abortTransaction();
     }
     console.log(err);
@@ -187,6 +169,7 @@ export const redirectToGithub = async (req, res) => {
 export const loginWithGithub = async (req, res) => {
   console.time();
   let mongooseSession;
+  let transactionCommitted = false;
   try {
     const { success, data, error } = githubLoginSchema.safeParse(req.query);
     if (!success) {
@@ -279,6 +262,7 @@ export const loginWithGithub = async (req, res) => {
       );
 
       await mongooseSession.commitTransaction();
+      transactionCommitted = true;
       user = newUser;
     }
 
@@ -353,7 +337,7 @@ export const loginWithGithub = async (req, res) => {
     // 6️⃣ Redirect to frontend
     res.redirect("http://localhost:5173/");
   } catch (err) {
-    if (mongooseSession) {
+    if (mongooseSession && !transactionCommitted) {
       await mongooseSession.abortTransaction();
     }
     console.error("GitHub OAuth Error:", err.message);
