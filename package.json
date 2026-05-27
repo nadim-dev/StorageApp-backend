@@ -1,8 +1,11 @@
 {
   "type": "module",
   "scripts": {
-    "dev": "node  --no-deprecation --env-file=.env  app.js",
-    "start": "node  --env-file=.env ./config/setup.js"
+    "dev": "node --watch   --no-deprecation --env-file=.env  app.js",
+    "start": "node --no-deprecation  app.js",
+    "setup":"node --env-file=.env config/setup.js",
+    "build":"node build.js"
+
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1032.0",
