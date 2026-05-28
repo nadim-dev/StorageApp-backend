@@ -184,9 +184,11 @@ export const getCurrrentUser = async (req, res) => {
        $nin: ["cancelled", "expired"],
      },
     }).lean();
-    let planId;
     
-
+    let status=null;
+    if(subscription.status == "pending")
+        status="active"
+    
     res.json({
       name: name,
       email: email,
@@ -199,7 +201,7 @@ export const getCurrrentUser = async (req, res) => {
       maxStorageInBytes,
       usedStorage: size,
       planId:subscription?.planId || null,
-      status:subscription?.statusn|| null,
+      status:status || subscription?.status ,
     });
   } catch (err) {
     console.log(err);

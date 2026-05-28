@@ -133,8 +133,7 @@ export const createSubcription = async (req, res) => {
         const subscriptionPeriod = getSubscriptionPeriod(existingSubscription);
         if (!subscriptionPeriod)
           return res.status(409).json({
-            message:
-              "Subscription billing period is not available yet. Please try again after activation.",
+            message:"Subscription billing period is not available yet. Please try again after activation.",
           });
 
         const currentTime = Date.now();

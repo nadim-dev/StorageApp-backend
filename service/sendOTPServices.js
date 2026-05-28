@@ -3,14 +3,34 @@ import OTP from "../models/otpModel.js";
 
 const resend = new Resend(process.env.resendKey);
 
+export async function sendEmail({
+  to,
+  subject,
+  html,
+  text,
+  from = "CloudNest <otp@focskill.in>",
+}) {
+  if (!to) throw new Error("Recipient email is required");
+
+  await resend.emails.send({
+    from,
+    to,
+    subject,
+    html,
+    text,
+  });
+
+  return { success: true, message: "Email sent successfully" };
+}
+
 export async function sendOTPServices(email) {
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
-  console.log("email",email)
-  // Upsert OTP (replace if it already exists)
+  console.log("email", email);
+
   await OTP.findOneAndUpdate(
     { email },
     { otp, createdAt: new Date() },
-    { upsert: true}
+    { upsert: true },
   );
 
   const html = `
@@ -20,14 +40,11 @@ export async function sendOTPServices(email) {
     </div>
   `;
 
-  await resend.emails.send({
-    from: "Storage App <otp@focskill.in>",
+  await sendEmail({
     to: email,
-    subject: "Storage App OTP",
+    subject: "CloudNest APP OTP",
     html,
   });
 
   return { success: true, message: "OTP sent successfully" };
 }
-
-
