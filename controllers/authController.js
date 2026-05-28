@@ -135,7 +135,8 @@ export const loginWithGoogle = async (req, res) => {
     res.cookie("sid", sessionId, {
       httpOnly: true,
       signed: true,
-      sameSite: "lax",
+      sameSite: "none",
+      secure: true,
       maxAge: sessionExpireTime * 1000,
     });
 
@@ -273,26 +274,6 @@ export const loginWithGithub = async (req, res) => {
         .json({ error: "your account has been terminated by admin" });
     }
 
-    // EXISTING USER → update image ONLY if Google image changed
-    // if (!user.picturePublicId && avatar_url) {
-    //   setImmediate(async () => {
-    //     console.log("background process is running");
-    //     try {
-    //       const { publicId, version } = await uploadOAuthAvatarToCloudinary(
-    //         avatar_url,
-    //         user._id.toString(),
-    //       );
-    //       console.log("public_id", publicId);
-    //       await User.findByIdAndUpdate(user._id, {
-    //         picturePublicId: publicId,
-    //         pictureVersion: version,
-    //       });
-    //     } catch (err) {
-    //       console.error("Background upload failed:", err);
-    //     }
-    //   });
-    // }
-
     //*  🔐 DEVICE LIMIT LOGIC (existing + new users)
     const MAX_DEVICE = 2;
     const sessionCount = await redisClient.ft.search(
@@ -330,7 +311,8 @@ export const loginWithGithub = async (req, res) => {
     res.cookie("sid", sessionId, {
       httpOnly: true,
       signed: true,
-      sameSite: "lax",
+       sameSite: "none",
+      secure: true,
       maxAge: sessionExpireTime * 1000,
     });
 
