@@ -5,7 +5,7 @@ import s3Client from "../config/s3.js";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 import Subcribe from "../models/subscriptionModel.js";
 
-cron.schedule("0 * * * *", async () => {
+cron.schedule("0 */3 * * *", async () => {
 
    console.log("Running expired subscription cleanup");
 

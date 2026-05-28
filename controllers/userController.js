@@ -2,7 +2,6 @@ import mongoose from "mongoose";
 import User from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import Directory from "../models/directoryModel.js";
-import Session from "../models/sessionModel.js";
 import File from "../models/fileModel.js";
 import { rm } from "fs/promises";
 import { getProfileImageUrl, uploadToCloudinary } from "../utils/cloudinary.js";
