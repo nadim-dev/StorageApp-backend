@@ -180,7 +180,7 @@ export const loginWithGithub = async (req, res) => {
     const { code } = data;
     console.log("code", code);
     if (!code) {
-      return res.redirect("http://localhost:5173/login");
+      return res.redirect("https://cloudnest-frontend.netlify.app/login");
     }
 
     // 1️⃣ Exchange code → access token
@@ -196,7 +196,7 @@ export const loginWithGithub = async (req, res) => {
 
     const accessToken = tokenRes.data.access_token;
     if (!accessToken) {
-      return res.redirect("http://localhost:5173/login");
+      return res.redirect("https://cloudnest-frontend.netlify.app/login");
     }
 
     // 2️⃣ Fetch GitHub user
@@ -219,7 +219,7 @@ export const loginWithGithub = async (req, res) => {
     }
 
     if (!email) {
-      return res.redirect("http://localhost:5173/login");
+      return res.redirect("https://cloudnest-frontend.netlify.app/login");
     }
 
     // 3️⃣ Find or create user
@@ -317,13 +317,13 @@ export const loginWithGithub = async (req, res) => {
     });
 
     // 6️⃣ Redirect to frontend
-    res.redirect("http://localhost:5173/");
+    res.redirect("https://cloudnest-frontend.netlify.app/");
   } catch (err) {
     if (mongooseSession && !transactionCommitted) {
       await mongooseSession.abortTransaction();
     }
     console.error("GitHub OAuth Error:", err.message);
-    res.redirect("http://localhost:5173/login");
+    res.redirect("https://cloudnest-frontend.netlify.app/login");
   } finally {
     if (mongooseSession) {
       mongooseSession.endSession();
