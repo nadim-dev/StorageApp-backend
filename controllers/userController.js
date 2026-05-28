@@ -152,6 +152,7 @@ export const login = async (req, res) => {
       httpOnly: true,
       signed: true,
       sameSite: "none",
+      secure: true,
       maxAge: sessionExpiryTime * 1000,
     });
 
