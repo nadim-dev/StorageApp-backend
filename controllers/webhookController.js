@@ -80,10 +80,16 @@ export const handleRazorpayWebhook = async (req, res) => {
               console.log("Active subscription not found");
               break;
             }
-            //* cancelled old subscription
-            await RzpInstance.subscriptions.cancel(subscriptionId, false);
+            //* mark old subscription expired locally before Razorpay sends cancellation webhook
             activeSubscription.status = "expired";
             await activeSubscription.save();
+            try {
+              await RzpInstance.subscriptions.cancel(subscriptionId, false);
+            } catch (err) {
+              activeSubscription.status = "active";
+              await activeSubscription.save();
+              throw err;
+            }
             //* creating new subscription
             const newSubscription = await RzpInstance.subscriptions.create({
               plan_id: newPlanId,
@@ -103,8 +109,8 @@ export const handleRazorpayWebhook = async (req, res) => {
               razorpaySubscriptionId: newSubscription.id,
               planId: newPlanId,
               status: "pending",
-              currentPeriodStart:Date.now(),
-              currentPeriodEnd:activeSubscription.currentPeriodEnd
+              currentPeriodStart: Date.now(),
+              currentPeriodEnd: activeSubscription.currentPeriodEnd,
             });
             const user = await User.findById(payment.notes.userId).lean();
             if (user?.email) {
@@ -131,19 +137,23 @@ export const handleRazorpayWebhook = async (req, res) => {
         break;
       }
 
-      case "subscription.authenticated":{
+      case "subscription.authenticated": {
         console.log("Authenticated controller is running");
         const { rzpSubscription, subscription } = await getSubscription(event);
-        console.log("rzpSubscription of authenticated controller",rzpSubscription);
-        console.log("subscription",subscription);
-        subscription.status="active";
-        const user=await User.findById(subscription.userId);
-        console.log("User",user);
-        user.maxStorageInBytes =Plan[rzpSubscription.plan_id].storageQuotaInBytes;
+        console.log(
+          "rzpSubscription of authenticated controller",
+          rzpSubscription,
+        );
+        console.log("subscription", subscription);
+        subscription.status = "active";
+        const user = await User.findById(subscription.userId);
+        console.log("User", user);
+        user.maxStorageInBytes =
+          Plan[rzpSubscription.plan_id].storageQuotaInBytes;
         await user.save();
         await subscription.save();
         break;
-      };
+      }
 
       case "subscription.charged": {
         const { rzpSubscription, subscription } = await getSubscription(event);
@@ -257,8 +267,7 @@ export const handleRazorpayWebhook = async (req, res) => {
 
       case "subscription.cancelled": {
         const { rzpSubscription, subscription } = await getSubscription(event);
-        if(subscription.status == "expired")
-            break;
+        if (subscription.status == "expired") break;
         console.log("rzpSubscription cancelled", rzpSubscription);
         await User.findOneAndUpdate(
           { _id: subscription.userId },
