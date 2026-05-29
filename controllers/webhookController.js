@@ -87,7 +87,6 @@ export const handleRazorpayWebhook = async (req, res) => {
             const newSubscription = await RzpInstance.subscriptions.create({
               plan_id: newPlanId,
               total_count: 50,
-              customer_notify: 1,
               notes: {
                 type: "upgraded_subscription",
                 userId: userId,
@@ -103,36 +102,10 @@ export const handleRazorpayWebhook = async (req, res) => {
               razorpaySubscriptionId: newSubscription.id,
               planId: newPlanId,
               status: "pending",
+              currentPeriodStart:Date.now(),
               currentPeriodEnd:activeSubscription.currentPeriodEnd
             });
-
-            // if (updatedSubscription.plan_id == payment.notes.newPlanId) {
-            //   const activeSubscription = await Subcribe.findOne({
-            //     razorpaySubscriptionId: payment.notes.subscriptionId,
-            //     status: "active",
-            //   });
-            //   if (activeSubscription) {
-            //     activeSubscription.planId = payment.notes.newPlanId;
-            //     activeSubscription.currentPeriodStart = new Date(updatedSubscription.current_start * 1000);
-            //     activeSubscription.currentPeriodEnd = new Date(updatedSubscription.current_end * 1000);
-            //     activeSubscription.nextBillingAt = new Date(updatedSubscription.charge_at * 1000);
-            //     await activeSubscription.save();
-            //   }
-            //   const user = await User.findById(payment.notes.userId);
-            //   if (user && Plan[payment.notes.newPlanId]) {
-            //     user.maxStorageInBytes =
-            //       Plan[payment.notes.newPlanId].storageQuotaInBytes;
-            //     await user.save();
-            //   }
-            //   console.log("Subscription upgraded successfully");
-            // }
-
-            const user = await User.findById(payment.notes.userId);
-            if (user && Plan[payment.notes.newPlanId]) {
-              user.maxStorageInBytes =
-                Plan[payment.notes.newPlanId].storageQuotaInBytes;
-              await user.save();
-            }
+            const user = await User.findById(payment.notes.userId).lean();
             if (user?.email) {
               await sendEmail({
                 to: user.email,
@@ -156,6 +129,18 @@ export const handleRazorpayWebhook = async (req, res) => {
         }
         break;
       }
+
+      case "subscription.authenticated":{
+        console.log("Authenticated controller is running");
+        const { rzpSubscription, subscription } = await getSubscription(event);
+        console.log("rzpSubscription of authenticated controller",rzpSubscription);
+        console.log("subscription",subscription);
+        const user=await User.findById(subscription.userId);
+        console.log("User",user);
+        user.maxStorageInBytes =Plan[rzpSubscription.plan_id].storageQuotaInBytes;
+        await user.save();
+        break;
+      };
 
       case "subscription.charged": {
         const { rzpSubscription, subscription } = await getSubscription(event);
@@ -269,6 +254,8 @@ export const handleRazorpayWebhook = async (req, res) => {
 
       case "subscription.cancelled": {
         const { rzpSubscription, subscription } = await getSubscription(event);
+        if(subscription.status == "expired")
+            break;
         console.log("rzpSubscription cancelled", rzpSubscription);
         await User.findOneAndUpdate(
           { _id: subscription.userId },

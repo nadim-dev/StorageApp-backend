@@ -186,7 +186,7 @@ export const getCurrrentUser = async (req, res) => {
     }).lean();
     
     let status=null;
-    if(subscription.status == "pending")
+    if(subscription?.status == "pending")
         status="active"
     
     res.json({

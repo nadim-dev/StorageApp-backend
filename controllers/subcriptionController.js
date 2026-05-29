@@ -77,11 +77,9 @@ export const cancelUserSubscription = async (req, res) => {
 export const getUserCurrentSubscription = async (req, res) => {
   const userId = req.user._id;
   const userSubscription = await Subcribe.findOne({
-    userId: userId,
-    status: "active",
-  })
-    .select("planId")
-    .lean();
+   userId,
+   status: { $in: ["active", "pending"] }
+}).select("planId").lean();
   if (!userSubscription)
     return res.status(404).json({ message: "user subscription is not found" });
 
@@ -100,6 +98,7 @@ export const createSubcription = async (req, res) => {
   console.log("plan id", planId);
   try {
     const selectedPlan = Plan[planId];
+    console.log("selected Plan",selectedPlan);
     if (!selectedPlan)
       return res.status(400).json({ message: "Invalid plan selected" });
 
