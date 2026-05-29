@@ -128,7 +128,7 @@ export const handleRazorpayWebhook = async (req, res) => {
               });
             }
             console.log("Subscription upgraded successfully");
-            return res.json({ short_url: newSubscription.short_url });
+            return res.json({short_url: newSubscription.short_url});
           } catch (err) {
             console.log("payment captured ka error", err);
             console.log(err.message);
