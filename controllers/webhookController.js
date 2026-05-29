@@ -136,10 +136,12 @@ export const handleRazorpayWebhook = async (req, res) => {
         const { rzpSubscription, subscription } = await getSubscription(event);
         console.log("rzpSubscription of authenticated controller",rzpSubscription);
         console.log("subscription",subscription);
+        subscription.status="active";
         const user=await User.findById(subscription.userId);
         console.log("User",user);
         user.maxStorageInBytes =Plan[rzpSubscription.plan_id].storageQuotaInBytes;
         await user.save();
+        await subscription.save();
         break;
       };
 
