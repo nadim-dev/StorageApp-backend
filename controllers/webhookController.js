@@ -83,6 +83,7 @@ export const handleRazorpayWebhook = async (req, res) => {
             //* cancelled old subscription
             await RzpInstance.subscriptions.cancel(subscriptionId, false);
             activeSubscription.status = "expired";
+            await activeSubscription.save();
             //* creating new subscription
             const newSubscription = await RzpInstance.subscriptions.create({
               plan_id: newPlanId,
