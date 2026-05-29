@@ -12,7 +12,7 @@ const subscriptionSchema=new Schema({
     },
     status:{
         type:String,
-        enum:["created","active","pending","halt","cancelled","completed"],
+        enum:["created","active","pending","halt","cancelled","completed","expired"],
         default:"created"
     },
     planId:{
