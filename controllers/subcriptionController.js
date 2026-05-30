@@ -104,13 +104,13 @@ export const createSubcription = async (req, res) => {
       status: { $ne: "expired" },
     });
     console.log("existing subscription", existingSubscription);
-    if (existingSubscription.status == "pending")
+    if (existingSubscription?.status == "pending")
       return res.status(200).json({ type:"subscription_scheduled",message:"A subscription change is already scheduled" });
     
     if (
       existingSubscription &&
-      existingSubscription.status == "active" &&
-      existingSubscription.planId == planId
+      existingSubscription?.status == "active" &&
+      existingSubscription?.planId == planId
     )
       return res
         .status(409)
@@ -119,7 +119,7 @@ export const createSubcription = async (req, res) => {
         });
 
     //* user has already active subscription now either he want to upgrade or downgrade his subscription
-    if (existingSubscription && existingSubscription.status === "active") {
+    if (existingSubscription && existingSubscription?.status === "active") {
       console.log(
         "user has already active subscription now either he want to upgrade or downgrade his subscription",
       );
