@@ -13,11 +13,11 @@ const webhookMessagesFile = new URL("../webhook-messages.txt", import.meta.url);
 const saveWebhookMessage = async (message) => {
   const entry = [`Received at: ${new Date().toISOString()}`, message, ""].join(
     "\n",
-  );
+  );   
 
   await appendFile(webhookMessagesFile, entry);
 };
-
+ 
 const webhookSecret = process.env.WEBHOOK_SECRET;
 
 const RzpInstance = new Razorpay({
@@ -112,7 +112,11 @@ export const handleRazorpayWebhook = async (req, res) => {
               currentPeriodStart: Date.now(),
               currentPeriodEnd: activeSubscription.currentPeriodEnd,
             });
-            const user = await User.findById(payment.notes.userId).lean();
+            const user = await User.findById(payment.notes.userId);
+            console.log("User", user);
+            user.maxStorageInBytes =Plan[rzpSubscription.plan_id].storageQuotaInBytes;
+            await user.save();
+            
             if (user?.email) {
               await sendEmail({
                 to: user.email,
@@ -146,11 +150,6 @@ export const handleRazorpayWebhook = async (req, res) => {
         );
         console.log("subscription", subscription);
         subscription.status = "active";
-        const user = await User.findById(subscription.userId);
-        console.log("User", user);
-        user.maxStorageInBytes =
-          Plan[rzpSubscription.plan_id].storageQuotaInBytes;
-        await user.save();
         await subscription.save();
         break;
       }
