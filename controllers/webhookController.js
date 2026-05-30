@@ -114,7 +114,7 @@ export const handleRazorpayWebhook = async (req, res) => {
             });
             const user = await User.findById(payment.notes.userId);
             console.log("User", user);
-            user.maxStorageInBytes =Plan[rzpSubscription.plan_id].storageQuotaInBytes;
+            user.maxStorageInBytes =Plan[newPlanId].storageQuotaInBytes;
             await user.save();
             
             if (user?.email) {
