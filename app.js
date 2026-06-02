@@ -6,6 +6,7 @@ import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import trashRoutes from "./routes/trashRoutes.js";
 import subcriptionRoutes from "./routes/subcriptionRoutes.js";
+import shareRoutes from "./routes/shareRoutes.js"
 import cookieParser from "cookie-parser";
 import checkauth from "./middleware/authMiddleware.js";
 import { connectDB } from "./config/mongoose.js";
@@ -42,9 +43,10 @@ try {
   app.use("/file", checkAuth, fileRoutes);
   app.use("/user", userRoutes);
   app.use("/auth", authRoutes);
-  app.use("/subscription",subcriptionRoutes)
+  app.use("/subscription",subcriptionRoutes);
+  app.use("/share",shareRoutes);
   
-  //running server
+  //* running server
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`server started successfully http:localhost:${PORT}`);
   });

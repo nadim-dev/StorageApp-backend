@@ -1,5 +1,6 @@
 import { Schema, model } from "mongoose";
 import mongoose from "mongoose";
+import linkSharingSchema from "./schemas/linkSharingSchema.js";
 
 const directorySchema = new Schema(
   {
@@ -30,6 +31,7 @@ const directorySchema = new Schema(
       default: false,
     },
     deletedAt: Date,
+    linkSharing: linkSharingSchema,
   },
   {
     strict: "throw",
@@ -38,6 +40,5 @@ const directorySchema = new Schema(
   },
 );
 
-const Directory =
-  mongoose.models.Directory || model("Directory", directorySchema);
+const Directory=model("Directory", directorySchema);
 export default Directory;

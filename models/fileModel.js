@@ -1,4 +1,5 @@
 import { Schema,model } from "mongoose";
+import linkSharingSchema from "./schemas/linkSharingSchema.js";
 
 
 const FileSchema=new Schema({
@@ -45,7 +46,8 @@ const FileSchema=new Schema({
    isUploading:{
       type:Boolean,
    },
-   deletedAt: Date
+   deletedAt: Date,
+   linkSharing:linkSharingSchema
 },{
     strict:"throw",
     versionKey:false,
