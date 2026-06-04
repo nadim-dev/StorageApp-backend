@@ -763,3 +763,53 @@ export const accessSterredResources = async (req, res) => {
     console.log(err.message);
   }
 };
+
+
+export const searchUsers = async (req, res) => {
+  console.log("Search user function is running");
+  const { q } = req.query;
+
+  if (!q || q.length < 2) {
+    return res.json({
+      users: []
+    });
+  }
+
+  const users = await User.find({
+    $or: [
+      {
+        username: {
+          $regex: q,
+          $options: "i"
+        }
+      },
+      {
+        email: {
+          $regex: q,
+          $options: "i"
+        }
+      }
+    ],
+    _id: {
+      $ne: req.user._id
+    }
+  })
+    .select("_id name email picturePublicId pictureVersion profilePictureUrl")
+    .limit(10);
+    
+    const updatedUsers = users.map((user) => {
+  return {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    picture: user.picturePublicId
+      ? getProfileImageUrl(
+          user.picturePublicId,
+          user.pictureVersion
+        )
+      : user.profilePictureUrl
+  };
+});
+
+  res.json({ users:updatedUsers });
+};

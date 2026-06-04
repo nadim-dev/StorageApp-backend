@@ -6,6 +6,26 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import {GetObjectCommand,} from "@aws-sdk/client-s3";
 import { createCloudFrontSignedUrl } from "../service/cloudfront.js";
 
+const isDescendant = async (
+  folderId,
+  rootFolderId
+) => {
+  let currentId = folderId;
+
+  while (currentId) {
+    if (currentId.toString() === rootFolderId.toString())
+      return true;
+    const folder =await Directory.findById(currentId).select("parentDirId");
+
+    if (!folder) 
+      return false;
+
+
+    currentId = folder.parentDirId;
+  }
+
+  return false;
+};
 
 export const createPublicLink = async (req, res) => {
   const { resourceId, resourceType } = req.body;
@@ -216,10 +236,19 @@ export const viewSharedDirectoryFile=async (req,res)=>{
 if(!directoryData)
   return res.status(404).json({"message":"directory dosen't exist"})
 
-const fileData=await File.findOne({_id:fileId,parentDirId:directoryData._id});
+const fileData=await File.findById(fileId);
+
 if (!fileData) {
   return res.status(403).json({
     message: "File does not belong to the shared directory",
+  });
+}
+
+const allowed =await isDescendant(fileData.parentDirId,directoryData._id);
+
+if (!allowed) {
+  return res.status(403).json({
+    message: "Access denied",
   });
 }
 
@@ -267,7 +296,7 @@ export const fetchSharedNestedDirectoryItem=async (req,res)=>{
   });
 }
 
-     // Fetch all children (files and subdirectories)
+     //* Fetch all children (files and subdirectories)
       const childFiles = await File.find({
         parentDirId: directory._id,
         isDeleted: false,

@@ -1,7 +1,7 @@
 import express from "express"
 import checkAuth, { allowRoles }  from "../middleware/authMiddleware.js"  
-import { register,login, getCurrrentUser, logout, logoutall,getAllUser,forceLogout,softDelete,HardDelete,getDeleteUsers,recoverUser,assignRole} from "../controllers/userController.js";
-import { getUserProfile,updatePassword,updateUserProfile,userResources,viewDocument,accessNestedResources,storageUsed,accessSterredResources } from "../controllers/userController.js";
+import { register,login, getCurrrentUser, logout, logoutall,getAllUser,forceLogout,softDelete,HardDelete,getDeleteUsers,recoverUser,assignRole, searchUsers} from "../controllers/userController.js";
+import { getUserProfile,updatePassword,updateUserProfile,userResources,viewDocument,accessNestedResources,storageUsed,accessSterredResources} from "../controllers/userController.js";
 import { uploadSingleImage } from "../middleware/multer.js";
 import { deleteFile, getFile, renameFile } from "../controllers/fileController.js";
 import { deleteDirectory, renameDirectory } from "../controllers/directoryController.js";
@@ -133,6 +133,7 @@ router.get("/storage",checkAuth,storageUsed);
 
 router.get("/starred",checkAuth,accessSterredResources);
 
-
+//* search user
+router.get("/search",checkAuth,searchUsers);
 
 export default router;
