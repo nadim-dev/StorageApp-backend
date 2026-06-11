@@ -778,7 +778,7 @@ export const searchUsers = async (req, res) => {
   const users = await User.find({
     $or: [
       {
-        username: {
+        name: {
           $regex: q,
           $options: "i"
         }
@@ -793,11 +793,10 @@ export const searchUsers = async (req, res) => {
     _id: {
       $ne: req.user._id
     }
-  })
-    .select("_id name email picturePublicId pictureVersion profilePictureUrl")
-    .limit(10);
+  }).limit(10);
     
-    const updatedUsers = users.map((user) => {
+  console.log("users",users);
+  const updatedUsers = users.map((user) => {
   return {
     _id: user._id,
     name: user.name,
@@ -813,3 +812,5 @@ export const searchUsers = async (req, res) => {
 
   res.json({ users:updatedUsers });
 };
+
+

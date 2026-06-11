@@ -3,8 +3,13 @@ import File from "../models/fileModel.js";
 import crypto from "node:crypto";
 import s3Client from "../config/s3.js";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import {GetObjectCommand,} from "@aws-sdk/client-s3";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { createCloudFrontSignedUrl } from "../service/cloudfront.js";
+import Share from "../models/shareModel.js";
+import { getSignedURL } from "../helper/getSignedURL.js";
+import { contentType } from "mime-types";
+import { fileURLToPath } from "node:url";
+
 
 const isDescendant = async (
   folderId,
@@ -25,6 +30,59 @@ const isDescendant = async (
   }
 
   return false;
+};
+
+const getSharedPermission = async (
+  resourceId,
+  resourceType,
+  userId
+) => {
+  let current;
+
+  if (resourceType === "directory") {
+    current = await Directory.findById(resourceId)
+      .select("_id parentDirId")
+      .lean();
+
+    if (!current) {
+      return null;
+    }
+  } else {
+    const file = await File.findById(resourceId)
+      .select("parentDirId")
+      .lean();
+
+    if (!file) {
+      return null;
+    }
+
+    current = await Directory.findById(file.parentDirId)
+      .select("_id parentDirId")
+      .lean();
+  }
+
+  while (current) {
+    const share = await Share.findOne({
+      resourceId: current._id,
+      sharedWith: userId
+    })
+      .select("permission")
+      .lean();
+
+    if (share) {
+      return share.permission;
+    }
+
+    if (!current.parentDirId) {
+      break;
+    }
+
+    current = await Directory.findById(current.parentDirId)
+      .select("_id parentDirId")
+      .lean();
+  }
+
+  return null;
 };
 
 export const createPublicLink = async (req, res) => {
@@ -173,6 +231,49 @@ export const fetchSharedResources = async (req, res) => {
   }
 };
 
+export const viewShareWithMeFile = async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const { action: type } = req.query;
+
+    const permission = await getSharedPermission(
+      fileId,
+      "file",
+      req.user._id
+    );
+
+    if (!permission) {
+      return res.status(403).json({
+        message: "Access denied"
+      });
+    }
+
+    const file = await File.findById(fileId)
+      .select("name extension contentType")
+      .lean();
+
+    if (!file) {
+      return res.status(404).json({
+        message: "File not found"
+      });
+    }
+
+    const url = await getSignedURL(
+      file,
+      type
+    );
+
+    return res.status(200).json({ url });
+
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      message: "Failed to view file"
+    });
+  }
+};
+
 
 export const viewSharedResources=async (req,res)=>{
   console.log("viewSharedResource function is running");
@@ -192,25 +293,7 @@ if(!fileData)
   return res.status(404).json({"message":"file dosen't exist"})
 
 console.log("fileData",fileData);
-const key = `${fileData._id}${fileData.extension}`;
-const disposition = type == "download" ? `attachment; filename="${encodeURIComponent(fileData.name)}"` : `inline; filename="${encodeURIComponent(fileData.name)}"`;
-const url = type === "download"
-        ? await getSignedUrl(
-            s3Client,
-            new GetObjectCommand({
-              Bucket: process.env.AWS_BUCKET_NAME,
-              Key: key,
-              ResponseContentDisposition: disposition,
-              ResponseContentType:
-                fileData.contentType || "application/octet-stream",
-            }),
-            { expiresIn: 60 * 60 },
-          )
-        : createCloudFrontSignedUrl(key, {
-            "response-content-disposition": disposition,
-            "response-content-type":
-              fileData.contentType || "application/octet-stream",
-          });
+const url=await getSignedURL(fileData,type);
 
   return res.status(200).json({"url":url});
 }catch(err){
@@ -218,6 +301,7 @@ const url = type === "download"
   return res.status(500).json({"message":"Internal Server Error"})
 }
 }
+
 
 export const viewSharedDirectoryFile=async (req,res)=>{
   console.log("viewSharedDirectoryFile function is running");
@@ -252,27 +336,8 @@ if (!allowed) {
   });
 }
 
-const key = `${fileData._id}${fileData.extension}`;
-const disposition = type == "download" ? `attachment; filename="${encodeURIComponent(fileData.name)}"` : `inline; filename="${encodeURIComponent(fileData.name)}"`;
-const url = type === "download"
-        ? await getSignedUrl(
-            s3Client,
-            new GetObjectCommand({
-              Bucket: process.env.AWS_BUCKET_NAME,
-              Key: key,
-              ResponseContentDisposition: disposition,
-              ResponseContentType:
-                fileData.contentType || "application/octet-stream",
-            }),
-            { expiresIn: 60 * 60 },
-          )
-        : createCloudFrontSignedUrl(key, {
-            "response-content-disposition": disposition,
-            "response-content-type":
-              fileData.contentType || "application/octet-stream",
-          });
-
-  return res.status(200).json({"url":url});
+const url=await getSignedURL(fileData,type);
+return res.status(200).json({"url":url});
 }catch(err){
   console.log(err.message);
   return res.status(500).json({"message":"Internal Server Error"})
@@ -338,3 +403,266 @@ export const fetchSharedNestedDirectoryItem=async (req,res)=>{
       });
 
 }
+
+export const storeSharedResourcedata=async (req,res)=>{
+  console.log("Store shared resource controller is running");
+  const {resourceId,resourceType,sharedWith,permission}=req.body;
+  if (!resourceId ||!resourceType ||!sharedWith?.length)
+      return res.status(400).json({success: false,message: "Missing required fields"});
+    
+  try{
+    let resource;
+    if (resourceType === "file")
+      resource=await File.findById(resourceId);
+    else if (resourceType === "directory")
+      resource=await Directory.findById(resourceId);
+    else 
+      return res.status(400).json({message: "Invalid resource type"});
+    
+
+    if (!resource) 
+      return res.status(404).json({message: "Resource not found"});
+
+     if (!resource.userId.equals(req.user._id)) 
+      return res.status(403).json({message: "You are not allowed to share this resource"})
+
+     
+  
+    const shareDocs=sharedWith.map((userId)=>(
+    {
+      resourceId,
+      resourceType,
+      ownerId: req.user._id,
+      sharedWith: userId,
+      permission,
+      resourceName: resource.name,
+      extension: resource.extension || null,
+      contentType:resource.contentType || null,
+    })
+    )
+
+      const results = await Promise.allSettled(
+      shareDocs.map((doc) =>
+        Share.updateOne(
+          {
+            resourceId: doc.resourceId,
+            sharedWith: doc.sharedWith
+          },
+          {
+            $set: doc
+          },
+          {
+            upsert: true
+          }
+        )
+      )
+    );
+
+    
+  return res.status(200).json({"message":"file is shared successfully"});
+}catch(err){
+  console.error("shareResource error:", err);
+  return res.status(500).json({message: "Failed to share resource"});
+}
+}
+
+
+export const getSharedWithMe = async (req, res) => {
+  try {
+    const shares = await Share.find({sharedWith: req.user._id})
+      .populate(
+        "ownerId",
+        "username email profilePictureUrl"
+      )
+      .sort({
+        createdAt: -1
+      })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: shares
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch shared resources"
+    });
+  }
+};
+
+export const fetchSharedFileWithMe = async (req, res) => {
+  try {
+    const shareResources = await Share.find({
+      sharedWith: req.user._id
+    })
+      .populate(
+        "ownerId",
+        "name email profilePictureUrl"
+      )
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      data: shareResources
+    });
+
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch shared resources"
+    });
+  }
+};
+
+export const renameShareWithMeFile = async (req, res) => {
+  try {
+    console.log("rename share with me file is running");
+
+    const { resourceId } = req.params;
+    const { renameType, renameValue } = req.body;
+
+    const permission = await getSharedPermission(
+      resourceId,
+      renameType,
+      req.user._id
+    );
+
+    if (permission !== "editor") {
+      return res.status(403).json({
+        message: "Access denied"
+      });
+    }
+
+    const Model =
+      renameType === "file"
+        ? File
+        : Directory;
+
+    const updatedResource =
+      await Model.findByIdAndUpdate(
+        resourceId,
+        {
+          $set: {
+            name: renameValue
+          }
+        },
+        {
+          new: true
+        }
+      );
+
+    if (!updatedResource) {
+      return res.status(404).json({
+        message: "Resource not found"
+      });
+    }
+
+    // Optional:
+    // If you store resourceName in Share collection
+    // keep Share documents in sync
+
+    await Share.updateMany(
+      { resourceId },
+      {
+        $set: {
+          resourceName: renameValue
+        }
+      }
+    );
+
+    return res.status(200).json({
+      message: "Resource renamed successfully"
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      message: "Internal server error"
+    });
+  }
+};
+
+export const viewShareWithMeDirectory = async (req, res) => {
+  console.log("viewShareWithMeDirectory",req.params);
+  const { dirId:directoryId } = req.params;
+
+  try {
+    let current = await Directory.findById(directoryId)
+      .select("_id parentDirId")
+      .lean();
+
+    console.log("current before while loop",current);
+
+
+    if (!current) {
+      return res.status(404).json({
+        message: "Directory not found"
+      });
+    }
+
+    let hasAccess = false;
+    let permission="viewer";
+
+    while (current) {
+      const share = await Share.findOne({
+        resourceId: current._id,
+        sharedWith: req.user._id
+      }).select("permission").lean();
+
+      console.log("share",share);
+      if (share) {
+        hasAccess = true;
+        permission=share.permission;
+        break;
+      }
+
+      if (!current.parentDirId) break;
+
+      current = await Directory.findById(current.parentDirId)
+        .select("_id parentDirId")
+        .lean();
+    }
+    console.log("current",current);
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        message: "Access denied"
+      });
+    }
+
+    const [directories, files] = await Promise.all([
+      Directory.find({ parentDirId: directoryId }).lean(),
+      File.find({ parentDirId: directoryId }).lean()
+    ]);
+
+    const updatedDirectories = directories.map(dir => ({
+  ...dir,
+  permission,
+  type:"directory"
+}));
+
+const updatedFiles = files.map(file => ({
+  ...file,
+  permission,
+  type:"file"
+}));
+
+    return res.status(200).json([
+      ...updatedDirectories,
+      ...updatedFiles
+    ]);
+
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      message: "Failed to fetch directory"
+    });
+  }
+};

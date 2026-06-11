@@ -1,5 +1,5 @@
 import express from "express";
-import {createPublicLink,fetchSharedResources,viewSharedResources,viewSharedDirectoryFile,fetchSharedNestedDirectoryItem} from "../controllers/shareController.js";
+import {createPublicLink,fetchSharedResources,viewSharedResources,renameShareWithMeFile,viewSharedDirectoryFile,fetchSharedNestedDirectoryItem,storeSharedResourcedata,fetchSharedFileWithMe,viewShareWithMeFile,viewShareWithMeDirectory} from "../controllers/shareController.js";
 import checkAuth from "../middleware/authMiddleware.js";
 
 const router=express.Router();
@@ -11,10 +11,14 @@ router.post(
   createPublicLink
 );
 
+router.get("/shared-with-me/file/:fileId",checkAuth,viewShareWithMeFile);
 router.get("/:token/file",viewSharedResources);
 
 router.get("/directory/:token/file/:fileId",viewSharedDirectoryFile);
 router.get("/:resourceType/:token",fetchSharedResources);
 router.get("/directory/:token/directory/:dirId",fetchSharedNestedDirectoryItem);
-
+router.post("/resources",checkAuth,storeSharedResourcedata);
+router.get("/shared-with-me",checkAuth,fetchSharedFileWithMe);
+router.patch("/shared-with-me/resource/:resourceId/rename",checkAuth,renameShareWithMeFile);
+router.get("/shared-with-me/directory/:dirId",checkAuth,viewShareWithMeDirectory);
 export default router;
