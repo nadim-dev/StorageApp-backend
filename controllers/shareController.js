@@ -134,7 +134,7 @@ export const createPublicLink = async (req, res) => {
     await resource.save();
 
     return res.status(200).json({
-      publicUrl: `${process.env.FRONTEND_URL}/share/${resourceType}/${token}`,
+      publicUrl: `https://cloudnest-frontend.netlify.app/share/${resourceType}/${token}`,
     });
   } catch (error) {
     console.error(error);
