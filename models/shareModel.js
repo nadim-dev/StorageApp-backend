@@ -47,6 +47,9 @@ const shareSchema = new Schema(
     },
     contentType:{
       type:String
+    },
+    size:{
+      type:Number
     }
   },
   {

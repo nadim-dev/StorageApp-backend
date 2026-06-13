@@ -1,5 +1,6 @@
 import Directory from "../models/directoryModel.js";
 import File from "../models/fileModel.js";
+import User from "../models/userModel.js";
 import crypto from "node:crypto";
 import s3Client from "../config/s3.js";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -9,6 +10,9 @@ import Share from "../models/shareModel.js";
 import { getSignedURL } from "../helper/getSignedURL.js";
 import { contentType } from "mime-types";
 import { fileURLToPath } from "node:url";
+import mongoose from "mongoose";
+import { success } from "zod";
+
 
 
 const isDescendant = async (
@@ -438,6 +442,7 @@ export const storeSharedResourcedata=async (req,res)=>{
       resourceName: resource.name,
       extension: resource.extension || null,
       contentType:resource.contentType || null,
+      size:resource.size,
     })
     )
 
@@ -666,3 +671,182 @@ const updatedFiles = files.map(file => ({
     });
   }
 };
+
+
+export const getSharedByMe = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const sharedResources = await Share.aggregate([
+      {
+        $match: {
+          ownerId: new mongoose.Types.ObjectId(userId),
+        },
+      },
+      {
+        $group: {
+          _id: "$resourceId",
+
+          resourceName: {
+            $first: "$resourceName",
+          },
+
+          resourceType: {
+            $first: "$resourceType",
+          },
+
+          extension: {
+            $first: "$extension",
+          },
+
+          contentType: {
+            $first: "$contentType",
+          },
+
+          shareDate: {
+            $first: "$shareDate",
+          },
+
+          totalSharedUsers: {
+            $sum: 1,
+          },
+
+          editorCount: {
+            $sum: {
+              $cond: [
+                { $eq: ["$permission", "editor"] },
+                1,
+                0,
+              ],
+            },
+          },
+
+          sharedUsers: {
+            $push: "$sharedWith",
+          },
+        },
+      },
+
+      {
+        $lookup: {
+          from: User.collection.name,
+          localField: "sharedUsers",
+          foreignField: "_id",
+          as: "sharedUsers",
+        },
+      },
+
+      {
+        $project: {
+          resourceName: 1,
+          resourceType: 1,
+          extension: 1,
+          contentType: 1,
+          shareDate: 1,
+          totalSharedUsers: 1,
+          editorCount: 1,
+
+          sharedUsers: {
+            $map: {
+              input: { $slice: ["$sharedUsers", 3] }, // first 3 users only
+              as: "user",
+              in: {
+                _id: "$$user._id",
+                name: "$$user.name",
+                email: "$$user.email",
+                profilePictureUrl: "$$user.profilePictureUrl",
+              },
+            },
+          },
+        },
+      },
+
+      {
+        $sort: {
+          shareDate: -1,
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: sharedResources,
+    });
+  } catch (error) {
+    console.error("Error fetching shared resources:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+    });
+  }
+};
+
+export const stopSharingResources = async (req, res) => {
+  try {
+    console.log("Stop sharing resource function is running");
+    const { resourceId } = req.params;
+    if(!resourceId)
+      return res.status(400).json({ message:"Resource id is required"});
+
+    const result = await Share.deleteMany({
+      resourceId,
+      ownerId: req.user._id,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Sharing stopped successfully",
+    });
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+export const getResourceAccess=async (req,res)=>{
+ console.log("get Resource Access function is running");
+ const {resourceId}=req.params;
+ console.log("resoueceId",resourceId);
+ const user=await Share.find({resourceId,ownerId:req.user._id}).populate("sharedWith","name email profilePictureUrl").select("_id permission").lean();
+ return res.status(200).json({user});
+}
+
+export const removeUserAccess=async (req,res)=>{
+  console.log("Remove user access function is running");
+  const {resourceId}=req.params;
+  const {removeAccessIds,permissionUpdates}=req.body;
+  console.log("removeAccessIds",removeAccessIds);
+  console.log("permissionUpdates",permissionUpdates);
+  if(!removeAccessIds.length && !permissionUpdates.length)
+    return res.status(400).json({success: false,message: "No access changes provided"});
+  try{
+  if (removeAccessIds.length){
+    await Share.deleteMany({
+      ownerId:req.user._id,
+      resourceId,
+      _id:{$in:removeAccessIds}
+    })
+  }
+
+  for (const item of permissionUpdates) {
+  await Share.findByIdAndUpdate(
+    item.accessId,
+    {
+      permission: item.permission,
+    }
+  );
+}
+
+  return res.status(200).json({success:true,message:"access updated successfully"})
+  }catch(err){
+    console.log(err.message);
+    return res.status(500).json({"message":"Internal Server Error"});
+  }
+
+
+}

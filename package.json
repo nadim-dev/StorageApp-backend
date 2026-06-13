@@ -1,7 +1,7 @@
 {
   "type": "module",
   "scripts": {
-    "dev": "node    --no-deprecation  --env-file=.env --watch  app.js",
+    "dev": "node    --no-deprecation  --env-file=.env  app.js",
     "start": "node --no-deprecation  app.js",
     "setup":"node --env-file=.env config/setup.js",
     "build":"npm i"
