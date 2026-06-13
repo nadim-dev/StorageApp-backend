@@ -91,8 +91,6 @@ const getSharedPermission = async (
 
 export const createPublicLink = async (req, res) => {
   const { resourceId, resourceType } = req.body;
-  console.log("resourceId", resourceId);
-  console.log("resourceType", resourceType);
 
   try {
     if (!resourceId || !resourceType)
@@ -120,7 +118,7 @@ export const createPublicLink = async (req, res) => {
       return res
         .status(200)
         .json({
-          publicUrl: `${process.env.FRONTEND_URL}/share/${resourceType}/${resource.linkSharing.token}`,
+          publicUrl: `https://cloudnest-frontend.netlify.app/share/${resourceType}/${resource.linkSharing.token}`,
         });
 
     const token = crypto.randomBytes(32).toString("hex");
