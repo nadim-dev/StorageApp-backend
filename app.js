@@ -32,6 +32,10 @@ try {
     })
   );
 
+  app.get(()=>{
+    console.log("get message is getting");
+  })
+
   app.use(cookieParser(mySecretKey));
 
   app.use(helmet());
