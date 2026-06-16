@@ -32,7 +32,7 @@ try {
     })
   );
 
-  app.get((req,res)=>{
+  app.get("/",(req,res)=>{
     res.json({"message":"get message is getting"});
   })
 
