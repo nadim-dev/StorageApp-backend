@@ -32,8 +32,8 @@ try {
     })
   );
 
-  app.get(()=>{
-    console.log("get message is getting");
+  app.get((req,res)=>{
+    res.json({"message":"get message is getting"});
   })
 
   app.use(cookieParser(mySecretKey));
