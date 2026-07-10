@@ -1,6 +1,6 @@
 import express from "express"
 import checkAuth, { allowRoles }  from "../middleware/authMiddleware.js"  
-import { register,login, getCurrrentUser, logout, logoutall,getAllUser,forceLogout,softDelete,HardDelete,getDeleteUsers,recoverUser,assignRole, searchUsers} from "../controllers/userController.js";
+import { register,login, getCurrrentUser, logout, logoutall,getAllUser,forceLogout,softDelete,HardDelete,getDeleteUsers,recoverUser,assignRole, searchUsers,getStorageHealth} from "../controllers/userController.js";
 import { getUserProfile,updatePassword,updateUserProfile,userResources,viewDocument,accessNestedResources,storageUsed,accessSterredResources,getStorageOnCategoryBasis,fetchAllRecommendations} from "../controllers/userController.js";
 import { uploadSingleImage } from "../middleware/multer.js";
 import { deleteFile, getFile, renameFile } from "../controllers/fileController.js";
@@ -140,5 +140,8 @@ router.get("/search",checkAuth,searchUsers);
 router.get("/dashboard/storage-breakdown",checkAuth,getStorageOnCategoryBasis);
 
 //* user's recommendation
-router.get("/storage/recommendations",checkAuth,fetchAllRecommendations)
+router.get("/storage/recommendations",checkAuth,fetchAllRecommendations);
+//* users storage calculator
+router.get("/storage/storage-health",checkAuth,getStorageHealth);
+
 export default router;

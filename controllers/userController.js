@@ -9,11 +9,11 @@ import redisClient from "../config/redis.js";
 import s3Client from "../config/s3.js";
 import path from "path";
 import { EXTENSION_CATEGORY } from "../constants/extension_category.js";
-import { oldResourceSummary } from "./fileController.js";
 import {loginSchema,registerSchema,roleSchema,updatePasswordSchema,updateProfileSchema} from "../validators/userValidator.js";
 import { sanitize } from "../utils/sanitize.js";
 import Subcribe from "../models/subscriptionModel.js";
-import { trashHelperFunction } from "./trashController.js";
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+
 
 //* user registeration controller
 export const register = async (req, res) => {
@@ -344,19 +344,35 @@ export const HardDelete = async (req, res) => {
       return res.status(403).json({ message: "you can't delete owner" });
     }
 
-    const files = await File.find({ userId: targetUser._id }).session(session);
+   const files = await File.find({ userId: targetUser._id })
+  .lean()
+  .session(session);
 
-    // ✅ Correct delete syntax
-    await User.deleteOne({ _id: targetUser._id }).session(session);
-    await File.deleteMany({ userId: targetUser._id }).session(session);
-    await Directory.deleteMany({ userId: targetUser._id }).session(session);
-    await Session.deleteMany({ userId: targetUser._id }).session(session);
-    await session.commitTransaction(); // ✅ commit ONLY once
+  const objects = files.map(({ _id, extension }) => ({
+    Key: `${_id}.${extension}`,
+  }));
 
-    // 🔥 File system cleanup (OUTSIDE transaction)
-    for (const { _id, extension } of files) {
-      await rm(`./public/${_id.toString()}${extension}`);
-    }
+await User.deleteOne({ _id: targetUser._id }).session(session);
+await File.deleteMany({ userId: targetUser._id }).session(session);
+await Directory.deleteMany({ userId: targetUser._id }).session(session);
+await Session.deleteMany({ userId: targetUser._id }).session(session);
+
+await session.commitTransaction();
+
+try {
+  if (objects.length > 0) {
+    await s3Client.send(
+      new DeleteObjectsCommand({
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Delete: {
+          Objects: objects,
+        },
+      })
+    );
+  }
+} catch (err) {
+  console.error("Failed to delete S3 files:", err);
+}
 
     return res.status(200).json({
       message: "User and all associated data deleted successfully",
@@ -863,10 +879,11 @@ export const getStorageOnCategoryBasis = async (req, res) => {
 };
 
 const duplicateSummary = async (userId) => {
+  const userObjectId = new mongoose.Types.ObjectId(userId);
   const [summary] = await File.aggregate([
     {
       $match: {
-        userId: new mongoose.Types.ObjectId(userId),
+        userId: userObjectId,
         isDeleted: false,
         isUploading: false,
         status: "active",
@@ -911,39 +928,125 @@ const duplicateSummary = async (userId) => {
 };
 
 
+export const trashStats = async (userId) => {
+  const userObjectId = new mongoose.Types.ObjectId(userId);
+
+  // Directory statistics
+  const [directoryStats] = await Directory.aggregate([
+    {
+      $match: {
+        userId: userObjectId,
+        isDeleted: true,
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        count: { $sum: 1 },
+        totalSize: { $sum: "$size" },
+      },
+    },
+  ]);
+
+  // Get deleted directory ids so files inside them are not counted again
+  const deletedDirIds = await Directory.find({
+    userId: userObjectId,
+    isDeleted: true,
+  }).distinct("_id");
+
+  // File statistics (excluding files inside deleted directories)
+  const [fileStats] = await File.aggregate([
+    {
+      $match: {
+        userId: userObjectId,
+        isDeleted: true,
+        parentDirId: { $nin: deletedDirIds },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        count: { $sum: 1 },
+        totalSize: { $sum: "$size" },
+      },
+    },
+  ]);
+
+  return {
+    count: (directoryStats?.count || 0) + (fileStats?.count || 0),
+    totalSize: (directoryStats?.totalSize || 0) + (fileStats?.totalSize || 0),
+  };
+};
+
+export const largeFilesStats = async (userId) => {
+  const userObjectId = new mongoose.Types.ObjectId(userId);
+
+  const [stats] = await File.aggregate([
+    {
+      $match: {
+        userId: userObjectId,
+        isDeleted: false,
+        size: { $gte: 500 * 1024 * 1024 }, // >= 500 MB
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        count: { $sum: 1 },
+        totalSize: { $sum: "$size" },
+      },
+    },
+  ]);
+
+  return {
+    count: stats?.count || 0,
+    totalSize: stats?.totalSize || 0,
+  };
+};
+
+export const oldResourceStats = async (userId) => {
+  const userObjectId = new mongoose.Types.ObjectId(userId);
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+  const [stats] = await File.aggregate([
+    {
+      $match: {
+        userId: userObjectId,
+        isDeleted: false,
+        lastAccessedAt: { $lte: oneYearAgo },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        count: { $sum: 1 },
+        totalSize: { $sum: "$size" },
+      },
+    },
+  ]);
+
+  return {
+    count: stats?.count || 0,
+    totalSize: stats?.totalSize || 0,
+  };
+};
+
 export const fetchAllRecommendations = async (req, res) => {
   try {
     console.log("fetchAllRecommendations function is running");
-    console.log("userId",req.user._id);
     const userId=req.user._id
-
     const [
       oldResource,
       largeFiles,
       duplicateResource,
       trashResource
     ] = await Promise.all([
-      oldResourceSummary(userId),        // Your helper
-      File.find({
-        userId,
-        isDeleted: false,
-        size: { $gte: 500 * 1024 * 1024 } // >= 1GB
-      }).select("size").lean(),
+      oldResourceStats(userId),           // Your helper
+      largeFilesStats(userId),
       duplicateSummary(userId),          // Your helper
-      trashHelperFunction(userId)               // Your helper
+      trashStats(userId)               // Your helper
     ]);
-
-    const largeFilesSize = largeFiles.reduce(
-      (sum, file) => sum + file.size,
-      0
-    );
-
-    const newTrashResource=[...trashResource.directoryList,...trashResource.files];
-    console.log("newTrashResource",newTrashResource);
-    const totalTrashSize = newTrashResource.reduce((acc, trash_file) => {
-    return acc + (trash_file.size || 0);
-    }, 0);
- 
 
   const recommendations = [
   {
@@ -955,20 +1058,20 @@ export const fetchAllRecommendations = async (req, res) => {
   {
     type: "old",
     title: "Old & Unused Files",
-    count: oldResource.filesList.length,
+    count: oldResource.count,
     size: oldResource.totalSize
   },
   {
     type: "large",
     title: "Large Files",
-    count: largeFiles.length,
-    size: largeFilesSize
+    count: largeFiles.count,
+    size: largeFiles.totalSize
   },
   {
     type: "trash",
     title: "Files in Trash",
-    count: newTrashResource.length,
-    size: totalTrashSize
+    count: trashResource.count,
+    size:trashResource.totalSize
   }
 ].filter(item => item.count > 0);
   return res.status(200).json({recommendations});
@@ -981,3 +1084,86 @@ export const fetchAllRecommendations = async (req, res) => {
     });
   }
 };
+
+
+export const getStorageHealth=async (req,res)=>{
+ try {
+  console.log("getStorageHealth calculation function is running");
+  const userId=req.user._id;
+  const rootDirId=req.user.rootDirId;
+
+  const rootDirectory = await Directory.findById(rootDirId).select("size").lean();
+  const usedStorage = rootDirectory?.size || 0;
+  console.log("used storage",usedStorage);
+
+  const[
+      oldResource,
+      largeFiles,
+      duplicateResource,
+      trashResource
+    ]=await Promise.all([
+      oldResourceStats(userId),        // Your helper
+      largeFilesStats(userId),
+      duplicateSummary(userId),          // Your helper
+      trashStats(userId),               // Your helper
+    ]);
+
+   const duplicatePenalty = usedStorage ? (duplicateResource.totalSize / usedStorage)*35 : 0;
+   const oldPenalty = usedStorage ? (oldResource.totalSize / usedStorage)*25 : 0;
+   const largePenalty= usedStorage ? (largeFiles.totalSize / usedStorage)*25 : 0;
+   const trashPenalty= usedStorage ? (trashResource.totalSize / usedStorage)*25 : 0;
+
+   let score =Math.round(100-duplicatePenalty -oldPenalty -largePenalty -trashPenalty);  
+   
+   score = Math.max(0, Math.min(100, Math.round(score)));
+   let message;
+   if(score >= 90)
+    message="Excellent! Your storage is optimized."
+
+  else if(score >= 75)
+      message="Great! Your storage is well managed."
+  
+  else if(score >= 60)
+      message="Good. Some cleanup can improve storage."
+  
+  else if(score >= 40)
+      message="Storage needs attention."
+  
+  else
+    message="Your storage is heavily cluttered."
+
+  const recommendations = [
+  {
+    type: "duplicate",
+    title: "Duplicate Files",
+    size: duplicateResource.totalSize,
+    status: duplicateResource.totalSize === 0 ? "good" : "warning",
+  },
+  {
+    type: "old",
+    title: "Old & Unused Files",
+    size: oldResource.totalSize,
+    status: oldResource.totalSize === 0 ? "good" : "warning",
+  },
+  {
+    type: "large",
+    title: "Large Unused Files",
+    size: largeFiles.totalSize,
+    status: largeFiles.totalSize === 0 ? "good" : "warning",
+  },
+  {
+    type: "trash",
+    title: "Trash",
+    size: trashResource.totalSize,
+    status: trashResource.totalSize === 0 ? "clean" : "warning",
+  },
+];
+  
+
+  return res.status(200).json({score:score,message:message,recommendations})
+   
+ } catch (err) {
+  console.log(err.message);
+  return res.status(500).json({ message: "Internal Server Error" });
+ }
+}
