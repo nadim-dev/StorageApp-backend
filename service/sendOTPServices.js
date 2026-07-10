@@ -47,4 +47,4 @@ export async function sendOTPServices(email) {
   });
 
   return { success: true, message: "OTP sent successfully" };
-}
+} 

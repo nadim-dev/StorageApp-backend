@@ -1,6 +1,7 @@
 import { rm } from "fs/promises";
 import { createWriteStream } from "fs";
 import path from "node:path";
+import mongoose from "mongoose";
 import File from "../models/fileModel.js";
 import Recent from "../models/recentModal.js";
 import Directory from "../models/directoryModel.js";
@@ -8,11 +9,7 @@ import { nameSchema } from "../validators/commonValidator.js";
 import { sanitize } from "../utils/sanitize.js";
 import { updateDirectorySize } from "../helper/updateDirectorySize.js";
 import User from "../models/userModel.js";
-import {
-  DeleteObjectCommand,
-  GetObjectCommand,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
+import {DeleteObjectCommand,GetObjectCommand,PutObjectCommand} from "@aws-sdk/client-s3";
 import s3Client from "../config/s3.js";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createCloudFrontSignedUrl } from "../service/cloudfront.js";
@@ -45,12 +42,10 @@ export const temporaryDeleteFile = async (req, res) => {
       },
     );
 
-    return res
-      .status(200)
-      .json({
-        message: "file deleted temporarily",
-        fileId: file._id.toString(),
-      });
+    return res.status(200).json({
+      message: "file deleted temporarily",
+      fileId: file._id.toString(),
+    });
   } catch (err) {
     console.log(err.message);
     return res.status(500).json({ message: "Internal Server Error" });
@@ -93,9 +88,7 @@ export const getFile = async (req, res) => {
   console.log("get file function is running");
   const { userId, fileId } = req.params;
   const query = { _id: fileId };
-  console.log(req.query);
   const { action: type } = req.query; //* download or view
-  console.log("type", type);
   const loggedInUser = req.user;
   if (loggedInUser.role == "Admin" || loggedInUser.role == "Owner") {
     if (!userId) {
@@ -114,14 +107,14 @@ export const getFile = async (req, res) => {
       .json({ error: "your account has been terminated by admin" });
   }
 
-  console.log("query", query);
 
   try {
-    const fileData = await File.findOne(query).lean();
-    console.log("fileData", fileData);
+    const fileData = await File.findOne(query);
     //* check file exist or not
     if (!fileData) return res.status(404).json({ error: "File not found!" });
     //* if file is present then only update feild otherwise insert whole document by combining attributes of filter and and update
+    fileData.lastAccessedAt=new Date();
+    await fileData.save();
     await Recent.findOneAndUpdate(
       {
         userId: loggedInUser._id,
@@ -173,6 +166,30 @@ export const getFile = async (req, res) => {
   }
 };
 
+const permanentlyDeleteFile = async (fileQuery) => {
+  const fileData = await File.findOne(fileQuery)
+    .select("_id extension parentDirId size isDeleted")
+    .lean();
+
+  if (!fileData) return null;
+
+  const command = new DeleteObjectCommand({
+    Bucket: process.env.AWS_BUCKET_NAME,
+    Key: `${fileData._id}${fileData.extension}`,
+  });
+
+  await s3Client.send(command);
+  await File.deleteOne(fileQuery);
+  await Recent.deleteMany({ itemId: fileData._id });
+
+  if (!fileData.isDeleted) {
+    await updateDirectorySize(fileData.parentDirId, -fileData.size);
+  }
+
+  return fileData;
+};
+
+
 export const deleteFile = async (req, res) => {
   console.log("delete function is running");
   console.log(req.params);
@@ -197,20 +214,11 @@ export const deleteFile = async (req, res) => {
       }
     }
 
-    const fileData = await File.findOne(fileQuery).select("extension").lean();
-    
-    if (!fileData) {
-      return res.status(404).json({ error: "File not found or access denied" });
-    }
+    await permanentlyDeleteFile(fileQuery);
 
-    const command = new DeleteObjectCommand({
-      Bucket: process.env.AWS_BUCKET_NAME,
-      Key: `${fileData._id}${fileData.extension}`,
-    });
 
-    await s3Client.send(command);
-    await File.deleteOne({ _id: fileId });
     return res.status(200).json({ message: "File deleted successfully" });
+
   } catch (err) {
     console.log(err.message);
     return res.status(500).json({ message: err.message });
@@ -285,13 +293,13 @@ export const handleStar = async (req, res) => {
 export const generateSignedURL = async (req, res) => {
   console.log("generate sign url function is running");
 
-  let { name, parentDirId, contentType, size} = req.body;
+  let { name, parentDirId, contentType, size, hash } = req.body;
   let plan;
-  
-  if (!name  || size <= 0) {
+
+  if (!name || size <= 0) {
     return res.status(400).json({ message: "invalid input" });
   }
-  
+
   const extension = path.extname(name);
   console.log("Content-Type", contentType);
   console.log(req.body);
@@ -307,24 +315,22 @@ export const generateSignedURL = async (req, res) => {
     User.findById(req.user._id).select("maxStorageInBytes").lean(),
     Directory.findById(req.user.rootDirId).select("size").lean(),
   ]);
-  
+
   if (dirData.size > userData.maxStorageInBytes) {
-  return res.status(403).json({
-    message:"Storage limit exceeded. Please upgrade your subscription to continue uploading files."
-  });
-}
-     
+    return res.status(403).json({
+      message:
+        "Storage limit exceeded. Please upgrade your subscription to continue uploading files.",
+    });
+  }
 
   const availableStorage = userData?.maxStorageInBytes - dirData.size;
-  
+
   if (size > availableStorage) {
     return res.status(413).json({ message: "Payload Too Large" });
   }
 
-   if(dirData.size + size <= 1073741824 )
-       plan="freeTier"
-    else
-       plan="paidTier"
+  if (dirData.size + size <= 1073741824) plan = "freeTier";
+  else plan = "paidTier";
 
   try {
     const fileData = await File.insertOne({
@@ -336,9 +342,9 @@ export const generateSignedURL = async (req, res) => {
       userId: req.user._id,
       extension,
       plan,
-
+      hash,
     });
-     
+
     console.log("fileData", fileData);
 
     // ✅ generate unique key (VERY IMPORTANT)
@@ -375,7 +381,7 @@ export const markUploadComplete = async (req, res) => {
   try {
     const fileData = await File.findOne({ _id: fileId }).lean();
     if (!fileData) return res.status(404).json({ message: "File not found" });
-    
+
     await File.findOneAndUpdate(
       { _id: fileId, isUploading: true },
       { $set: { isUploading: false } },
@@ -413,3 +419,196 @@ export const markUploadFail = async (req, res) => {
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
+
+export const getDuplicateFiles = async (req, res) => {
+  console.log("Duplicate file function is running");
+  
+  try {
+    const userId = new mongoose.Types.ObjectId(req.user._id);
+
+    const duplicateGroups = await File.aggregate([
+      {
+        $match: {
+          userId,
+          isUploading: false,
+          isDeleted: false,
+          status: "active",
+          hash: {
+            $exists: true,
+            $ne: null,
+          },
+        },
+      },
+
+      {
+        $lookup: {
+          from: "directories",
+          localField: "parentDirId",
+          foreignField: "_id",
+          as: "parentDirectory",
+        },
+      },
+
+      {
+        $addFields: {
+          parentDirectoryName: {
+            $ifNull: [{ $arrayElemAt: ["$parentDirectory.name", 0] }, null],
+          },
+        },
+      },
+
+      {
+        $group: {
+          _id: "$hash",
+
+          files: {
+            $push: {
+              _id: "$_id",
+              name: "$name",
+              size: "$size",
+              extension: "$extension",
+              parentDirectoryName: "$parentDirectoryName",
+              updatedAt: "$updatedAt",
+            },
+          },
+
+          count: {
+            $sum: 1,
+          },
+
+          totalSize: {
+            $sum: "$size",
+          },
+
+          fileSize: {
+            $first: "$size",
+          },
+        },
+      },
+
+      {
+        $match: {
+          count: {
+            $gt: 1,
+          },
+        },
+      },
+
+      {
+        $addFields: {
+          recoverableSpace: {
+            $subtract: ["$totalSize", "$fileSize"],
+          },
+        },
+      },
+
+      {
+        $sort: {
+          recoverableSpace: -1,
+          count: -1,
+        },
+      },
+    ]);
+
+    const totalRecoverableSpace = duplicateGroups.reduce(
+      (sum, group) => sum + group.recoverableSpace,
+      0,
+    );
+
+    return res.json({
+      duplicateGroups,
+      totalRecoverableSpace,
+    });
+  } catch (err) {
+    console.log(err.message);
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
+
+
+export const moveAllDuplicatesInTrash=async (req,res)=>{
+  console.log("move all duplicate function is running");
+  const fileIds = req.body?.data?.fileIds ?? req.body?.fileIds;
+  if (!Array.isArray(fileIds) || fileIds.length === 0)
+    return res.status(400).json({message: "fileIds is required" });
+  try{
+  await File.updateMany(
+  {
+    _id: { $in: fileIds }
+  },
+  {
+    $set: {
+      isDeleted: true
+    }
+  }
+);
+
+  return res.json({"message":"file is moved to the trash"});
+  }catch(err){
+    console.log(err.message);
+    return res.status(500).json({"message":"Internal Server Error"});
+  }
+}
+
+export const deleteAllDuplicateFiles=async (req,res)=>{
+  console.log("delete all duplicates file is running");
+  const fileIds = req.body?.fileIds;
+  console.log("fileIds",fileIds);
+  if (!fileIds || fileIds.length === 0)
+    return res.status(400).json({message: "fileIds is required" });
+  try{
+    await Promise.all(
+      fileIds.map((fileId) =>
+        permanentlyDeleteFile({ userId: req.user._id, _id: fileId }),
+      ),
+    );
+
+    return res.status(200).json({
+      message: "deleted duplicated file successfully",
+    });
+  }catch(err){
+    console.log(err.message);
+    return res.status(500).json({"message":"Internal Server Error"})
+  }
+}
+
+export const oldResourceSummary=async (userId)=>{
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  
+  const filesList = await File.find({
+    userId: userId,
+    isDeleted: false,
+    lastAccessedAt: { $lte: oneYearAgo },
+  }).select("extension size name updatedAt lastAccessedAt").lean();
+  const totalSize = filesList.reduce((sum, file) => {
+    return sum + file.size;
+}, 0);
+return {filesList,totalSize}
+}
+
+export const fetchAllOldResources=async (req,res)=>{
+  console.log("fetch all old resources controller is running");
+  try{
+  const {filesList,totalSize}=await oldResourceSummary(req.user._id);
+  console.log("fileList",filesList);
+  console.log("totalSize",totalSize);
+  return res.status(200).json({summary:{totalFiles:filesList.length,removableSize:totalSize},"oldFilesList":filesList})
+  }catch(err){
+       console.log(err.message);
+       return res.status(500).json({"message":"Internal Server Error"});
+  }
+}
+
+export const fetchLargeFiles=async (req,res)=>{
+  console.log("fetch large files is running");
+  try{
+  const largeFileList=await File.find({userId:req.user._id,size:{$gte:500*1024*1024}}).select("name extension size updatedAt").lean();
+  return res.status(200).json({largeFileList});
+  }catch(err){
+       console.log(err.message);
+       return res.status(500).json({"message":"Internal Server Error"});
+  }
+}

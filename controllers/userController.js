@@ -8,16 +8,12 @@ import { getProfileImageUrl, uploadToCloudinary } from "../utils/cloudinary.js";
 import redisClient from "../config/redis.js";
 import s3Client from "../config/s3.js";
 import path from "path";
-
-import {
-  loginSchema,
-  registerSchema,
-  roleSchema,
-  updatePasswordSchema,
-  updateProfileSchema,
-} from "../validators/userValidator.js";
+import { EXTENSION_CATEGORY } from "../constants/extension_category.js";
+import { oldResourceSummary } from "./fileController.js";
+import {loginSchema,registerSchema,roleSchema,updatePasswordSchema,updateProfileSchema} from "../validators/userValidator.js";
 import { sanitize } from "../utils/sanitize.js";
 import Subcribe from "../models/subscriptionModel.js";
+import { trashHelperFunction } from "./trashController.js";
 
 //* user registeration controller
 export const register = async (req, res) => {
@@ -103,7 +99,7 @@ export const login = async (req, res) => {
     const user = await User.findOne({ email });
     console.log("user", user);
     if (!user) return res.status(404).json({ error: "email dosen't exist" });
-
+    
     //? if user deleted by admin
     if (user.deleted) {
       return res
@@ -216,7 +212,7 @@ export const logout = async (req, res) => {
   await redisClient.del(`session:${sessionId}`);
   res.clearCookie("sid");
   return res.status(204).end();
-};
+};  
 
 //* user logout from all the device
 export const logoutall = async (req, res) => {
@@ -813,4 +809,175 @@ export const searchUsers = async (req, res) => {
   res.json({ users:updatedUsers });
 };
 
+export const getStorageOnCategoryBasis = async (req, res) => {
+  console.log("getStorageOnCategoryBasis controller is running");
 
+  try {
+    const filesList = await File.find({
+      userId: req.user._id,
+      isDeleted: false,
+    })
+      .select("extension size createdAt")
+      .lean();
+    console.log("fileList", filesList);
+
+    const storageBreakdown = {};
+
+    for (const file of filesList) {
+      const extension = file.extension?.toLowerCase().replace(/^\./, "");
+      const category =
+        EXTENSION_CATEGORY[extension] || "Others";
+
+      if (!storageBreakdown[category]) {
+        storageBreakdown[category] = 0;
+      }
+
+      storageBreakdown[category] += file.size;
+    }
+
+    const totalUsedStorage = Object.values(storageBreakdown).reduce(
+      (sum, size) => sum + size,
+      0
+    );
+
+    const categories = Object.entries(storageBreakdown).map(
+      ([name, size]) => ({
+        name,
+        size,
+        percentage: totalUsedStorage
+          ? Number(((size / totalUsedStorage) * 100).toFixed(1))
+          : 0,
+      })
+    );
+
+    return res.status(200).json({
+      totalUsedStorage,
+      categories,
+    });
+  } catch (err) {
+    console.log(err.message);
+    return res.status(500).json({
+      message: "Something went wrong",
+    });
+  }
+};
+
+const duplicateSummary = async (userId) => {
+  const [summary] = await File.aggregate([
+    {
+      $match: {
+        userId: new mongoose.Types.ObjectId(userId),
+        isDeleted: false,
+        isUploading: false,
+        status: "active",
+        hash: {
+          $exists: true,
+          $nin: [null, ""],
+        },
+      },
+    },
+    {
+      $group: {
+        _id: "$hash",
+        count: { $sum: 1 },
+        totalSize: { $sum: "$size" },
+        fileSize: { $first: "$size" },
+      },
+    },
+    {
+      $match: {
+        count: { $gt: 1 },
+      },
+    },
+    {
+      $project: {
+        duplicateCount: { $subtract: ["$count", 1] },
+        duplicateSize: { $subtract: ["$totalSize", "$fileSize"] },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        count: { $sum: "$duplicateCount" },
+        totalSize: { $sum: "$duplicateSize" },
+      },
+    },
+  ]);
+
+  return {
+    count: summary?.count || 0,
+    totalSize: summary?.totalSize || 0,
+  };
+};
+
+
+export const fetchAllRecommendations = async (req, res) => {
+  try {
+    console.log("fetchAllRecommendations function is running");
+    console.log("userId",req.user._id);
+    const userId=req.user._id
+
+    const [
+      oldResource,
+      largeFiles,
+      duplicateResource,
+      trashResource
+    ] = await Promise.all([
+      oldResourceSummary(userId),        // Your helper
+      File.find({
+        userId,
+        isDeleted: false,
+        size: { $gte: 500 * 1024 * 1024 } // >= 1GB
+      }).select("size").lean(),
+      duplicateSummary(userId),          // Your helper
+      trashHelperFunction(userId)               // Your helper
+    ]);
+
+    const largeFilesSize = largeFiles.reduce(
+      (sum, file) => sum + file.size,
+      0
+    );
+
+    const newTrashResource=[...trashResource.directoryList,...trashResource.files];
+    console.log("newTrashResource",newTrashResource);
+    const totalTrashSize = newTrashResource.reduce((acc, trash_file) => {
+    return acc + (trash_file.size || 0);
+    }, 0);
+ 
+
+  const recommendations = [
+  {
+    type: "duplicate",
+    title: "Duplicate Files",
+    count: duplicateResource.count,
+    size: duplicateResource.totalSize
+  },
+  {
+    type: "old",
+    title: "Old & Unused Files",
+    count: oldResource.filesList.length,
+    size: oldResource.totalSize
+  },
+  {
+    type: "large",
+    title: "Large Files",
+    count: largeFiles.length,
+    size: largeFilesSize
+  },
+  {
+    type: "trash",
+    title: "Files in Trash",
+    count: newTrashResource.length,
+    size: totalTrashSize
+  }
+].filter(item => item.count > 0);
+  return res.status(200).json({recommendations});
+ 
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch recommendations."
+    });
+  }
+};

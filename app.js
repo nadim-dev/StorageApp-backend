@@ -27,7 +27,7 @@ try {
   
   app.use(
     cors({
-      origin: process.env.CLIENT_URL,
+      origin: [process.env.CLIENT_URL,"http://localhost:5173"],
       credentials: true,
     })
   );
@@ -44,7 +44,7 @@ try {
   
   app.use("/trash",trashRoutes);
   app.use("/directory",directoryRoutes);
-  app.use("/file", checkAuth, fileRoutes);
+  app.use("/file",fileRoutes);
   app.use("/user", userRoutes);
   app.use("/auth", authRoutes);
   app.use("/subscription",subcriptionRoutes);

@@ -1,14 +1,8 @@
-import { ObjectId } from "mongodb";
+import mongoose from "mongoose";
 
 export default function(req,res,next,id){
    console.log("validation middleware function is running")
-   console.log("id",id);
-    if(Array.isArray(id)){
-       [id]=id
-    }
-
-   if (!ObjectId.isValid(id)) {
-          return res.status(400).json({ message: `Invalid Id ${id}` });
-   }
+    if (!mongoose.Types.ObjectId.isValid(id)) 
+    return res.status(400).json({message:"Invalid Id"});
    next();
 }

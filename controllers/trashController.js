@@ -4,29 +4,36 @@ import Recent from "../models/recentModal.js";
 import { getDirectoryContents } from "../helper/getDirectoryContents.js";
 import { updateDirectorySize } from "../helper/updateDirectorySize.js";
 
-export const getAllTrashItems = async (req, res) => {
-  try {
-    console.log("Trash item function is running");
-
-    const directoryList = await Directory.find({
+export const trashHelperFunction=async (userId)=>{
+   const directoryList = await Directory.find({
       isDeleted: true,
-      userId: req.user._id,
+      userId: userId,
     })
       .select("name deletedAt")
       .lean();
 
-    console.log("directoryList", directoryList);
+      console.log("trashHelperFunction ka directoryList",directoryList);
+    
     const deletedDirIds = directoryList.map((dir) => dir._id);
 
     const files = await File.find({
       isDeleted: true,
-      userId: req.user._id,
+      userId: userId,
       parentDirId: { $nin: deletedDirIds },
     })
       .select("name deletedAt size extension")
       .lean();
-    console.log("files", files);
 
+    console.log("trashHelperFunction ka directoryList",files);
+    return {directoryList,files}
+}
+
+export const getAllTrashItems = async (req, res) => {
+  try {
+    console.log("Trash item function is running");
+
+    const {directoryList,files}=await trashHelperFunction(req.user._id);
+    
     // ✅ add type field
     const directoriesWithType = directoryList.map((dir) => ({
       ...dir,
@@ -40,7 +47,7 @@ export const getAllTrashItems = async (req, res) => {
 
     // ✅ merge trash items
     const trashItems = [...directoriesWithType, ...filesWithType];
-
+  
     return res.status(200).json(trashItems);
   } catch (err) {
     console.log(err.message);
@@ -59,7 +66,7 @@ export const recoverTrashFile = async (req, res) => {
       { isDeleted: false },
       { new: true },
     );
-    console.log("file", file);
+    console.log("file",file);
     if (!file) return res.status(404).json({ message: "File not found" });
     await updateDirectorySize(file.parentDirId, file.size);
     await Recent.findOneAndUpdate(

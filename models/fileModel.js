@@ -38,6 +38,9 @@ const FileSchema=new Schema({
    plan:{
       type:String,
    },
+   hash:{
+     type:String
+   },
    status:{
     type:String,
     enum:["active","locked"],
@@ -46,6 +49,11 @@ const FileSchema=new Schema({
    isUploading:{
       type:Boolean,
    },
+   lastAccessedAt:{
+         type:Date,
+         default:new Date()
+      }
+   ,
    deletedAt: Date,
    linkSharing:linkSharingSchema
 },{

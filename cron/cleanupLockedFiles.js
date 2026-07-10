@@ -15,6 +15,7 @@ cron.schedule("0 */3 * * *", async () => {
         $lte: new Date(),
       },
     });
+
     if (expiredSubscriptions.length == 0) {
       return;
     }
