@@ -30,6 +30,10 @@ const directorySchema = new Schema(
       type: Boolean,
       default: false,
     },
+    deletedAt:{
+      type:Date,
+      default:null
+    },
     deletedAt: Date,
     linkSharing: linkSharingSchema,
   },

@@ -191,19 +191,15 @@ export const AccessingBreadCumbPath = async (req, res) => {
 
 export const temporaryDeleteFolder = async (req, res) => {
   try {
-    console.log("temporary delete folder function is running");
-    console.log("req.params", req.params);
     const { dirId } = req.params;
     if (!dirId) return res.status(400).json({ message: "dirId is required" });
 
     const directoryData = await Directory.findById(dirId).lean();
-    console.log("directoryData", directoryData);
     if (!directoryData)
       return res.status(404).json({ message: "Directory not found" });
 
     const { filesId, directoriesId } = await getDirectoryContents(dirId);
-    console.log("final filesId", filesId);
-    console.log("final dorectoriesId", directoriesId);
+
     const fileIds = filesId.map((file) => file._id);
     const directoryIds = directoriesId.map((dir) => dir._id);
     await updateDirectorySize(directoryData.parentDirId, -directoryData.size);
@@ -214,8 +210,9 @@ export const temporaryDeleteFolder = async (req, res) => {
     );
     await Directory.updateMany(
       { _id: { $in: directoryIds } },
-      { $set: { isDeleted: true } },
+      { $set: { isDeleted: true,deletedAt:new Date() } },
     );
+
     return res.status(200).json({ message: "Folder deleted successfully" });
   } catch (err) {
     console.log(err.message);
@@ -223,7 +220,6 @@ export const temporaryDeleteFolder = async (req, res) => {
 };
 
 export const handleStar = async (req, res) => {
-  console.log("post request for making directory star");
   const { starred } = req.body;
   try {
     await Directory.findByIdAndUpdate(req.params.id, { starred });

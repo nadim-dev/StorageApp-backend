@@ -8,9 +8,7 @@ export const trashHelperFunction=async (userId)=>{
    const directoryList = await Directory.find({
       isDeleted: true,
       userId: userId,
-    })
-      .select("name deletedAt")
-      .lean();
+    }).select("name deletedAt size").lean();
 
       console.log("trashHelperFunction ka directoryList",directoryList);
     
@@ -63,7 +61,7 @@ export const recoverTrashFile = async (req, res) => {
 
     const file = await File.findByIdAndUpdate(
       fileId,
-      { isDeleted: false },
+      { isDeleted: false,deletedAt:null },
       { new: true },
     );
     console.log("file",file);

@@ -50,7 +50,7 @@ export const handleRazorpayWebhook = async (req, res) => {
       case "subscription.activated": {
         console.log("Activated part of razorpay is running");
         const { rzpSubscription, subscription } = await getSubscription(event);
-        console.log("rzpSubscription razorpaysubscription", rzpSubscription);
+        console.log("rzpSubscription", rzpSubscription);
         subscription.status = rzpSubscription.status;
         subscription.currentPeriodStart = new Date(
           rzpSubscription.current_start * 1000,
